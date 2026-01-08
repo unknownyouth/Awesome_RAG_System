@@ -37,6 +37,7 @@
 **1. 查询预处理 (Query Understanding & Routing) —— *Agentic 的入口***
 • **Guardrails**: 检测用户输入是否包含敏感词或攻击指令 (NeMo Guardrails)。
 • **Query Rewrite**: 使用 LLM 将 "它多少钱？" 改写为 "iPhone 15 Pro 的价格是多少？"。
+• **Multi Query** (vLLM + Qwen2.5-7B-Instruct)
 • **Router (语义路由)**:
     ◦ 如果是“总结全文” $\rightarrow$ 走 Summary Index。
     ◦ 如果是“对比参数” $\rightarrow$ 走 SQL/Tabular 检索。
@@ -82,3 +83,22 @@
 2. **Add Re-ranking**: 加入重排模型，你会发现准确率大幅提升。
 3. **Add Eval**: 接入 Ragas，跑个分，看看瓶颈在哪。
 4. **Add Advanced**: 最后再考虑 Query Routing 和 CRAG。
+
+structured output:
+对于不支持with_structured_output()
+1.使用 PydanticOutputParser (LangChain 标准解法)
+LangChain 提供了一个专门的解析器，它会自动生成一段“提示词指令（Format Instructions）”，告诉模型该如何格式化输出。
+
+2.方案二：Few-Shot Prompting (少样本提示)
+如果不使用 Function Calling，模型很容易“自由发挥”。最有效的约束手段是给它看例子 (Few-Shot)。
+你需要在 Prompt 里明确写出 Input 和 JSON Output 的对应关系。
+
+3.方案三：自动修复机制 (OutputFixingParser)
+对于不支持格式化的弱模型，最常见的问题是：
+JSON 格式错误（比如少个引号，或者用了中文逗号）。
+输出了废话前缀（比如 "Sure! Here is the JSON: ..."）。
+LangChain 提供了一个 Auto-Fixing 机制。如果第一次解析失败了，它会把“错误的输出”和“报错信息”一起扔回给 LLM，让 LLM 自己修。
+
+4.方案四：受限解码 (Constrained Decoding) —— 仅限本地部署
+如果你使用的是 vLLM 本地部署（你之前提到了 Qwen 2.5），这是最强、最完美的方案。
+你可以直接在推理引擎层面“禁止”模型生成任何不符合 JSON 语法的 Token。这不需要模型“聪明”，而是从数学概率上锁死了它只能输出 JSON。
