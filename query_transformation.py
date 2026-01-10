@@ -2,7 +2,7 @@ from typing import TypedDict, List, Annotated
 from langchain_core.messages import BaseMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, START
 import os
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
@@ -59,17 +59,15 @@ def rewrite_query_node(state: QueryTransformationState):
 
     # A. 准备 Prompt
     # 技巧: System Prompt 必须强调'指代消解'
-    system_prompt = """You are a Query Rewrite Engine for a RAG system.
-    1. Resolve pronouns (it, he, that) in the user's latest question using Chat History.
-    2. If the user input is just 'hi', 'thanks', or 'bye', set is_chit_chat=True.
-    3. Output the standalone query in the same language as the user.
-    """
+    system_prompt = """You are an AI assistant tasked with reformulating user queries to improve retrieval in a RAG system. 
+        Given the original query, rewrite it to be more specific, detailed, and likely to retrieve relevant information.
+
+        Original query: {original_query}
+
+        {format_instructions}
+
+        Rewritten query:"""
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        MessagesPlaceholder(variable_name="history"),
-        ("human", "{question}"),
-    ])
 
 
     # structured_llm = llm.with_structured_output(RewriteOutput)
@@ -86,14 +84,8 @@ def rewrite_query_node(state: QueryTransformationState):
         
         # 4. 构建 Prompt，必须包含 {format_instructions}
     prompt = PromptTemplate(
-            template="""你是一个查询重写助手。将用户的查询改写为更具体、详细的问题。
-            
-{format_instructions}
-
-用户输入: {question}
-
-请按照上述 JSON 格式输出结果。""",
-            input_variables=["question"],
+            template=system_prompt,
+            input_variables=["original_query"],
             partial_variables={"format_instructions": format_instructions},
         )
         
@@ -108,7 +100,7 @@ def rewrite_query_node(state: QueryTransformationState):
         
         result: RewriteOutput = chain.invoke({
             "history": recent_history,
-            "question": original_q
+            "original_query": original_q
         })
         
         # D. 返回状态更新
@@ -127,6 +119,33 @@ def rewrite_query_node(state: QueryTransformationState):
             "step_log": [f"Rewrite Error: {str(e)}"]
         }
 
+def multi_query_node(state: QueryTransformationState):
+    """
+    节点功能: 接收重写后的查询，输出多个查询
+    """
+    rewritten_query = state["rewritten_query"]
+    system_prompt = """You are an AI language model assistant. Your task is to generate three different versions of the given user question 
+    to retrieve relevant documents from a vector database.
+    By generating multiple versions of the user question,
+    your goal is to help the user overcome some of the limitations
+    of distance-based similarity search. Provide these alternative questions separated by newlines.
+    Original query: {rewritten_query}
+
+    {format_instructions}
+
+    Multi-queries:"""
+
+    parser = PydanticOutputParser(pydantic_object=MultiQueryOutput)
+    format_instructions = parser.get_format_instructions()
+
+    prompt = PromptTemplate(input_variables=["rewritten_query"],
+                            template=system_prompt,
+                            partial_variables={"format_instructions": format_instructions})
+    chain = prompt | llm | parser
+    result: MultiQueryOutput = chain.invoke({"rewritten_query": rewritten_query})
+    return {
+        "multi_queries": result.multi_queries}
+
 def route_after_rewrite(state: QueryTransformationState):
     """
     根据 rewrite 结果决定下一步去哪
@@ -135,3 +154,22 @@ def route_after_rewrite(state: QueryTransformationState):
         return "continue_search" # 指向 RAG 检索流程
     else:
         return "end_chat"        # 指向直接回复流程 (跳过检索)
+
+def main():
+    """
+    Main function to run the query transformation pipeline.
+    """
+    graph = StateGraph(QueryTransformationState)
+    graph.add_node("rewrite_query", rewrite_query_node)
+    graph.add_node("multi_query", multi_query_node)
+    graph.add_node("route_after_rewrite", route_after_rewrite)
+    graph.add_edge(START, "rewrite_query")
+    graph.add_edge("rewrite_query", "multi_query")
+    graph.add_edge("multi_query", END)
+    query_transformation_graph = graph.compile()
+    result = query_transformation_graph.invoke({"original_question": "What is the capital of France?", "chat_history": []})
+    print(result)
+
+
+if __name__ == "__main__":
+    main()
