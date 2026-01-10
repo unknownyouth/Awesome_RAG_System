@@ -1,20 +1,23 @@
 from typing import TypedDict, List, Annotated
 from langchain_core.messages import BaseMessage
+from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
 import os
+from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 load_dotenv()
 # Set the OpenAI API key environment variable
 os.environ["DEEPSEEK_API_KEY"] = os.getenv('DEEPSEEK_API_KEY')
 
-class RewriteState(TypedDict):
-    # 输入字段
+class QueryTransformationState(TypedDict):
+
     original_question: str            # user's original question
     chat_history: List[BaseMessage]   # conversation history (LangChain Message object list)
     
     # output fields (filled by nodes)
     rewritten_query: str              # rewritten standard query
+    multi_queries: List[str]          # multi-query based on user input and history
     search_needed: bool               # whether to execute search (for routing)
     step_log: List[str]               # (optional) engineering debug log list
 
@@ -47,7 +50,7 @@ llm = ChatOpenAI(temperature=0,
                  max_tokens=4000)
 
 # --- 3. 定义 Rewrite 节点 ---
-def rewrite_query_node(state: RewriteState):
+def rewrite_query_node(state: QueryTransformationState):
     """
     节点功能: 接收原始问题 + 历史，输出重写后的问题 + 意图
     """
@@ -68,9 +71,35 @@ def rewrite_query_node(state: RewriteState):
         ("human", "{question}"),
     ])
 
-    # B. 绑定结构化输出 (关键工程步骤)
-    structured_llm = llm.with_structured_output(RewriteOutput)
-    chain = prompt | structured_llm
+
+    # structured_llm = llm.with_structured_output(RewriteOutput)
+    # chain = prompt | structured_llm
+
+    
+        
+        # 2. 初始化解析器
+    parser = PydanticOutputParser(pydantic_object=RewriteOutput)
+        
+        # 3. 获取格式指令 (关键步骤)
+        # 这会自动生成一段很长的 String，教模型怎么写 JSON
+    format_instructions = parser.get_format_instructions()
+        
+        # 4. 构建 Prompt，必须包含 {format_instructions}
+    prompt = PromptTemplate(
+            template="""你是一个查询重写助手。将用户的查询改写为更具体、详细的问题。
+            
+{format_instructions}
+
+用户输入: {question}
+
+请按照上述 JSON 格式输出结果。""",
+            input_variables=["question"],
+            partial_variables={"format_instructions": format_instructions},
+        )
+        
+        # 5. 组合 Chain
+        # 注意：这里不用 with_structured_output，而是用普通的管道
+    chain = prompt | llm | parser
 
     # C. 执行调用
     try:
@@ -90,7 +119,7 @@ def rewrite_query_node(state: RewriteState):
             "step_log": [f"Rewrite: {original_q} -> {result.rewritten_query}"]
         }
         
-    except Exception as e:
+    except Exception as e: 
         print(f"Rewrite Failed: {e}")
         return {
             "rewritten_query": original_q,
@@ -98,7 +127,7 @@ def rewrite_query_node(state: RewriteState):
             "step_log": [f"Rewrite Error: {str(e)}"]
         }
 
-def route_after_rewrite(state: RewriteState):
+def route_after_rewrite(state: QueryTransformationState):
     """
     根据 rewrite 结果决定下一步去哪
     """
