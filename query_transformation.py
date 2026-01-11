@@ -6,9 +6,15 @@ from langgraph.graph import StateGraph, END, START
 import os
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
+from langsmith import traceable
 load_dotenv()
 # Set the OpenAI API key environment variable
 os.environ["DEEPSEEK_API_KEY"] = os.getenv('DEEPSEEK_API_KEY')
+
+# os.environ["LANGSMITH_TRACING"] = os.getenv("LANGSMITH_TRACING")
+# os.environ["LANGSMITH_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT")
+# os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
+# os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT")
 
 class QueryTransformationState(TypedDict):
 
@@ -49,7 +55,7 @@ llm = ChatOpenAI(temperature=0,
                  base_url="https://api.deepseek.com", 
                  max_tokens=4000)
 
-# --- 3. 定义 Rewrite 节点 ---
+
 def rewrite_query_node(state: QueryTransformationState):
     """
     节点功能: 接收原始问题 + 历史，输出重写后的问题 + 意图
@@ -119,6 +125,7 @@ def rewrite_query_node(state: QueryTransformationState):
             "step_log": [f"Rewrite Error: {str(e)}"]
         }
 
+
 def multi_query_node(state: QueryTransformationState):
     """
     节点功能: 接收重写后的查询，输出多个查询
@@ -151,9 +158,44 @@ def route_after_rewrite(state: QueryTransformationState):
     根据 rewrite 结果决定下一步去哪
     """
     if state["search_needed"]:
-        return "continue_search" # 指向 RAG 检索流程
+        return "multi_query"# 指向 RAG 检索流程
     else:
         return "end_chat"        # 指向直接回复流程 (跳过检索)
+
+def build_query_transformation_graph():
+    """
+    构建查询转换的 LangGraph
+    
+    Returns:
+        CompiledStateGraph: 编译后的 graph 对象
+    """
+    graph = StateGraph(QueryTransformationState)
+    
+    # 添加节点
+    graph.add_node("rewrite_query", rewrite_query_node)
+    graph.add_node("multi_query", multi_query_node)
+    
+    # 设置入口点
+    graph.set_entry_point("rewrite_query")
+    
+    # 添加条件边：从 rewrite_query 根据路由函数决定下一步
+    graph.add_conditional_edges(
+        "rewrite_query",
+        route_after_rewrite,
+        {
+            "multi_query": "multi_query",
+            "end_chat": END
+        }
+    )
+    
+    # multi_query 节点后直接结束
+    graph.add_edge("multi_query", END)
+    
+    # 编译并返回
+    return graph.compile()
+
+# For studio to import
+query_transformation_graph = build_query_transformation_graph()
 
 def main():
     """
@@ -162,13 +204,26 @@ def main():
     graph = StateGraph(QueryTransformationState)
     graph.add_node("rewrite_query", rewrite_query_node)
     graph.add_node("multi_query", multi_query_node)
-    graph.add_node("route_after_rewrite", route_after_rewrite)
-    graph.add_edge(START, "rewrite_query")
-    graph.add_edge("rewrite_query", "multi_query")
+
+    # graph.add_edge(START, "rewrite_query")
+    # graph.add_edge("rewrite_query", "route_after_rewrite")
+    # graph.add_edge("route_after_rewrite", "multi_query")
+    # graph.add_edge("multi_query", END)
+    graph.set_entry_point("rewrite_query")
+
+    graph.add_conditional_edges(
+        "rewrite_query",
+        route_after_rewrite,
+        {
+            "multi_query": "multi_query",
+            "end_chat": END
+        }
+    )
     graph.add_edge("multi_query", END)
     query_transformation_graph = graph.compile()
-    result = query_transformation_graph.invoke({"original_question": "What is the capital of France?", "chat_history": []})
+    result = query_transformation_graph.invoke({"original_question": "Hi, how are you?", "chat_history": []})
     print(result)
+
 
 
 if __name__ == "__main__":

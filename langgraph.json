@@ -1,0 +1,7 @@
+{
+    "dependencies": ["."],
+    "graphs": {
+      "query_transformation": "./query_transformation.py:query_transformation_graph"
+    },
+    "env": ".env"
+  }
