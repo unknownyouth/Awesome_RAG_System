@@ -2,9 +2,26 @@ from chromadb import Search, K, Knn, Rrf
 from langchain_core.documents import Document
 from typing import TypedDict, List, Any
 from global_state import GlobalState
+from langchain_chroma import Chroma
+from langchain_openai import OpenAIEmbeddings
+import chromadb
+from langgraph.graph import StateGraph, END, START
+from functools import partial
 
+embedding_function = OpenAIEmbeddings(model="text-embedding-3-small")
 
-def vector_store_retrieval_node(state: GlobalState):
+# 2. 初始化 Chroma Client (推荐使用 PersistentClient 以便持久化)
+persistent_client = chromadb.PersistentClient(path="./chroma_db")
+
+# 3. 初始化 LangChain 的 Vector Store
+# 这将作为我们操作数据库的句柄
+vector_store = Chroma(
+    client=persistent_client,
+    collection_name="hybrid_collection",
+    embedding_function=embedding_function,
+)
+
+def vector_store_retrieval_node(state: GlobalState, vector_store):
     """
     LangGraph 节点：执行混合检索 (Dense + Sparse + RRF)
     """
@@ -88,3 +105,18 @@ search_config = (
 
 # 3. 执行搜索
 results = vector_store.hybrid_search(search_config)
+
+workflow = StateGraph(GlobalState) # 假设 State 是 dict
+
+# ! 核心步骤 !
+# 使用 partial 将 vector_store "绑定" 到函数的第二个参数上
+# 这样 LangGraph 调用时只需要传 state，Python 会自动补上 vector_store
+node_with_dependency = partial(vector_store_retrieval_node, vector_store=vector_store)
+
+# 添加节点
+workflow.add_node("vector_store_retrieval", node_with_dependency)
+
+# ... 设置边和编译 ...
+workflow.set_entry_point("vector_store_retrieval")
+workflow.add_edge("vector_store_retrieval", END)
+app = workflow.compile()
