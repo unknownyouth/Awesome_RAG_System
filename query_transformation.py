@@ -7,6 +7,7 @@ import os
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from langsmith import traceable
+from global_state import GlobalState
 load_dotenv()
 # Set the OpenAI API key environment variable
 os.environ["DEEPSEEK_API_KEY"] = os.getenv('DEEPSEEK_API_KEY')
@@ -16,16 +17,16 @@ os.environ["DEEPSEEK_API_KEY"] = os.getenv('DEEPSEEK_API_KEY')
 # os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
 # os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT")
 
-class QueryTransformationState(TypedDict):
+# class QueryTransformationState(TypedDict):
 
-    original_question: str            # user's original question
-    chat_history: List[BaseMessage]   # conversation history (LangChain Message object list)
+#     original_question: str            # user's original question
+#     chat_history: List[BaseMessage]   # conversation history (LangChain Message object list)
     
-    # output fields (filled by nodes)
-    rewritten_query: str              # rewritten standard query
-    multi_queries: List[str]          # multi-query based on user input and history
-    search_needed: bool               # whether to execute search (for routing)
-    step_log: List[str]               # (optional) engineering debug log list
+#     # output fields (filled by nodes)
+#     rewritten_query: str              # rewritten standard query
+#     multi_queries: List[str]          # multi-query based on user input and history
+#     search_needed: bool               # whether to execute search (for routing)
+#     step_log: List[str]               # (optional) engineering debug log list
 
 # define the structured output schema for the LLM (Pydantic)
 class RewriteOutput(BaseModel):
@@ -56,7 +57,7 @@ llm = ChatOpenAI(temperature=0,
                  max_tokens=4000)
 
 
-def rewrite_query_node(state: QueryTransformationState):
+def rewrite_query_node(state: GlobalState):
     """
     节点功能: 接收原始问题 + 历史，输出重写后的问题 + 意图
     """
@@ -126,7 +127,7 @@ def rewrite_query_node(state: QueryTransformationState):
         }
 
 
-def multi_query_node(state: QueryTransformationState):
+def multi_query_node(state: GlobalState):
     """
     节点功能: 接收重写后的查询，输出多个查询
     """
@@ -153,7 +154,7 @@ def multi_query_node(state: QueryTransformationState):
     return {
         "multi_queries": result.multi_queries}
 
-def route_after_rewrite(state: QueryTransformationState):
+def route_after_rewrite(state: GlobalState):
     """
     根据 rewrite 结果决定下一步去哪
     """
@@ -169,7 +170,7 @@ def build_query_transformation_graph():
     Returns:
         CompiledStateGraph: 编译后的 graph 对象
     """
-    graph = StateGraph(QueryTransformationState)
+    graph = StateGraph(GlobalState)
     
     # 添加节点
     graph.add_node("rewrite_query", rewrite_query_node)
@@ -201,7 +202,7 @@ def main():
     """
     Main function to run the query transformation pipeline.
     """
-    graph = StateGraph(QueryTransformationState)
+    graph = StateGraph(GlobalState)
     graph.add_node("rewrite_query", rewrite_query_node)
     graph.add_node("multi_query", multi_query_node)
 
