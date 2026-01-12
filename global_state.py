@@ -21,5 +21,11 @@ class GlobalState(TypedDict):
     search_needed: bool               # whether to execute search (for routing)
     step_log: List[str]               # (optional) engineering debug log list
 
+    # query routing state
+    routing_decision: str        # routing decision
+
     # vector store retrieval state
     documents: List[Document]    # retrieved documents
+
+    # re-ranking state
+    reranked_documents: List[Document]    # re-ranked documents

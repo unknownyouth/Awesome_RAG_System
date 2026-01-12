@@ -7,7 +7,15 @@ import os
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from langsmith import traceable
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from global_state import GlobalState
+
 load_dotenv()
 # Set the OpenAI API key environment variable
 os.environ["DEEPSEEK_API_KEY"] = os.getenv('DEEPSEEK_API_KEY')
@@ -17,16 +25,6 @@ os.environ["DEEPSEEK_API_KEY"] = os.getenv('DEEPSEEK_API_KEY')
 # os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY")
 # os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT")
 
-# class QueryTransformationState(TypedDict):
-
-#     original_question: str            # user's original question
-#     chat_history: List[BaseMessage]   # conversation history (LangChain Message object list)
-    
-#     # output fields (filled by nodes)
-#     rewritten_query: str              # rewritten standard query
-#     multi_queries: List[str]          # multi-query based on user input and history
-#     search_needed: bool               # whether to execute search (for routing)
-#     step_log: List[str]               # (optional) engineering debug log list
 
 # define the structured output schema for the LLM (Pydantic)
 class RewriteOutput(BaseModel):
@@ -82,11 +80,8 @@ def rewrite_query_node(state: GlobalState):
 
     
         
-        # 2. 初始化解析器
     parser = PydanticOutputParser(pydantic_object=RewriteOutput)
         
-        # 3. 获取格式指令 (关键步骤)
-        # 这会自动生成一段很长的 String，教模型怎么写 JSON
     format_instructions = parser.get_format_instructions()
         
         # 4. 构建 Prompt，必须包含 {format_instructions}
