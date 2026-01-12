@@ -154,9 +154,9 @@ def route_after_rewrite(state: GlobalState):
     根据 rewrite 结果决定下一步去哪
     """
     if state["search_needed"]:
-        return "multi_query"# 指向 RAG 检索流程
+        return "query_routing"
     else:
-        return "end_chat"        # 指向直接回复流程 (跳过检索)
+        return "generation"        # 指向直接回复流程 (跳过检索)
 
 def build_query_transformation_graph():
     """

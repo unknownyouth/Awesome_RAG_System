@@ -13,10 +13,10 @@ from langchain_core.output_parsers import PydanticOutputParser
 
 from langchain_openai import ChatOpenAI
 import os
-
+from typing import Literal
 class QueryRoutingOutput(BaseModel):
-    routing_decision: str = Field(
-        description="The routing decision."
+    routing_decision: Literal["vector_store", "graph_database", "relational_database"] = Field(
+        description="The single best data source to answer the query."
     )
 
 llm = ChatOpenAI(temperature=0,
@@ -31,7 +31,7 @@ def query_routing_node(state: GlobalState):
     """
     rewritten_query = state["rewritten_query"]
     
-    system_prompt = """You are a routing module in a Retrieval-Augmented Generation system.
+    system_prompt = """You are a routing module in a Retrieval-Augmented Generation (RAG) system.
 
 Your task is to decide which single data source is most appropriate to retrieve information for the user’s query.
 
@@ -59,21 +59,33 @@ There are exactly THREE possible sources:
      * Time-series over structured logs
    - Use when the query sounds like it could be answered by SQL over tables (SELECT, WHERE, GROUP BY, ORDER BY).
 
-Guidelines:
+CRITICAL RULES:
+- You MUST strongly prefer relational_database when the query clearly asks for filtering, counting, aggregating, or comparing structured records.
+- You MUST strongly prefer graph_database when the query is about relationships, paths, or “who/what connects A and B”.
+- ONLY choose vector_store if the question is primarily about free-text content, explanation, or narrative, and does NOT clearly match the graph or relational patterns.
+- Do NOT default to vector_store when the query obviously matches graph_database or relational_database patterns.
 - ALWAYS choose exactly ONE source.
-- Do NOT invent a fourth option.
-- If the query mixes multiple aspects, choose the source that is MOST central to answering it.
-- If you are unsure, prefer vector_store.
+
+Here are some examples:
+
+[Example 1]
+User query: "List all matches in 2023 where our team scored more than 20 points."
+Correct source: relational_database
+
+[Example 2]
+User query: "Which players have played for both Team A and Team B?"
+Correct source: graph_database
+
+[Example 3]
+User query: "Explain how our training strategy changed between 2023 and 2024."
+Correct source: vector_store
+
+Now, decide the best source for the following query.
 
 User query:
 {rewritten_query}
 
 {format_instructions}
-
-You must respond with ONLY one of the following three strings (no explanation, no extra text):
-- vector_store
-- graph_database
-- relational_database
 """
     parser = PydanticOutputParser(pydantic_object=QueryRoutingOutput)
         
@@ -96,3 +108,23 @@ You must respond with ONLY one of the following three strings (no explanation, n
     
     return {"routing_decision": result.routing_decision}
 
+def route_to_database(state: GlobalState):
+    """
+    Route to database for retrieval.
+    """
+    routing_decision = state["routing_decision"]
+    if routing_decision == "vector_store":
+        return "vector_store"
+    elif routing_decision == "graph_database":
+        return "graph_database"
+    elif routing_decision == "relational_database":
+        return "relational_database"
+
+def route_after_rewrite(state: GlobalState):
+    """
+    根据 rewrite 结果决定下一步去哪
+    """
+    if state["search_needed"]:
+        return "query_routing"
+    else:
+        return "generation"        # 指向直接回复流程 (跳过检索)

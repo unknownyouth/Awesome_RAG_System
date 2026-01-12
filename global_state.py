@@ -29,3 +29,5 @@ class GlobalState(TypedDict):
 
     # re-ranking state
     reranked_documents: List[Document]    # re-ranked documents
+
+    final_answer: str    # answer
