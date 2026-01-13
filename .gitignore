@@ -7,7 +7,7 @@ __pycache__/
 *$py.class
 *.so
 .langgraph_api/
-
+chroma_db_test_hf/
 # Virtual environments
 venv/
 env/
