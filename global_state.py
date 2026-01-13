@@ -18,7 +18,7 @@ class GlobalState(TypedDict):
     # query transformation state
     rewritten_query: str              # rewritten standard query
     multi_queries: List[str]          # multi-query based on user input and history
-    search_needed: bool               # whether to execute search (for routing)
+    search_needed: bool               # whether to execute retrieval (for routing)
     step_log: List[str]               # (optional) engineering debug log list
 
     # query routing state
@@ -29,5 +29,10 @@ class GlobalState(TypedDict):
 
     # re-ranking state
     reranked_documents: List[Document]    # re-ranked documents
+
+    # retrieval evaluation result
+    retrieval_evaluation: List[str]    # retrieval evaluation result
+    web_search_needed: bool           # whether to execute web search (for routing)
+    final_documents: List[Document]    # final documents for answer generation
 
     final_answer: str    # answer

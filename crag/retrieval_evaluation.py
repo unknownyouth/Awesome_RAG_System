@@ -26,12 +26,13 @@ def retrieval_evaluation_node(state: GlobalState):
 
     rewritten_query = state["rewritten_query"]
     reranked_documents = state["reranked_documents"]
+    retrieval_evaluation = []
 
     system_prompt = """You are a document retrieval evaluator that's responsible for checking the relevancy of a retrieved document to the user's question. \\n 
     If the document contains keyword(s) or semantic meaning related to the question, grade it as relevant. \\n
     Output a binary score 'yes' or 'no' to indicate whether the document is relevant to the question.
     
-    Retrieved documents: {reranked_documents}
+    Retrieved document: {document}
 
     User's question: {rewritten_query}
 
@@ -41,13 +42,16 @@ def retrieval_evaluation_node(state: GlobalState):
     parser = PydanticOutputParser(pydantic_object=RetrievalEvaluator)
         
     format_instructions = parser.get_format_instructions()
-    prompt = PromptTemplate(
-        template=system_prompt,
-        input_variables=["reranked_documents", "rewritten_query"],
-        partial_variables={"format_instructions": format_instructions},
-    )
 
-    chain = prompt | llm | parser
-    result = chain.invoke({"reranked_documents": reranked_documents, "rewritten_query": rewritten_query})
-    state["retrieval_evaluation"] = result.binary_score
-    return state
+    for document in reranked_documents:
+        prompt = PromptTemplate(
+            template=system_prompt,
+            input_variables=["document", "rewritten_query"],
+            partial_variables={"format_instructions": format_instructions},
+        )
+
+        chain = prompt | llm | parser
+    
+        result = chain.invoke({"document": document, "rewritten_query": rewritten_query})
+        retrieval_evaluation.append(result.binary_score)
+    return {"retrieval_evaluation": retrieval_evaluation}
