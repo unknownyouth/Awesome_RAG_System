@@ -5,6 +5,9 @@ web_search_tool = TavilySearchResults(k=3)
 from global_state import GlobalState
 from langchain_core.documents import Document
 
+from dotenv import load_dotenv
+load_dotenv()
+
 def web_search_node(state: GlobalState):
     """
     Search the web for the most relevant information.

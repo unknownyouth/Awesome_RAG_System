@@ -5,7 +5,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
     
 from query.query_transformation import rewrite_query_node, multi_query_node, route_after_rewrite
-from query.query_routing import query_routing_node
+from query.query_routing import query_routing_node, route_to_database
 from global_state import GlobalState
 from langgraph.graph import StateGraph
 from langgraph.graph import StateGraph, END, START
@@ -13,7 +13,11 @@ from langchain_openai import ChatOpenAI
 import os
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
-
+from crag.retrieval_evaluation import retrieval_evaluation_node, routing_after_evaluation
+from crag.web_search import web_search_node
+from database.vector_store import vector_store_retrieval_node
+from database.graph_database import graph_database_retrieval_node
+from database.relational_database import relational_database_retrieval_node
 load_dotenv()
 
 llm = ChatOpenAI(temperature=0,
@@ -58,7 +62,13 @@ def build_graph():
     graph.add_node("rewrite_query", rewrite_query_node)
     graph.add_node("query_routing", query_routing_node)
     graph.add_node("multi_query", multi_query_node)
+
+    graph.add_node("vector_store_retrieval", vector_store_retrieval_node)
+    graph.add_node("graph_database_retrieval", graph_database_retrieval_node)
+    graph.add_node("relational_database_retrieval", relational_database_retrieval_node)
     graph.add_node("generation", generation_node)
+    graph.add_node("retrieval_evaluation", retrieval_evaluation_node)
+    graph.add_node("web_search", web_search_node)
     # graph.add_edge(START, "rewrite_query")
     # graph.add_edge("rewrite_query", "route_after_rewrite")
     # graph.add_edge("route_after_rewrite", "multi_query")
@@ -74,7 +84,25 @@ def build_graph():
         }
     )
     graph.add_edge("query_routing", "multi_query")
-    graph.add_edge("multi_query", END)
+    graph.add_conditional_edges(
+        "multi_query",
+        route_to_database,
+        {
+            "vector_store_retrieval": "vector_store_retrieval",
+            "graph_database": "graph_database",
+            "relational_database": "relational_database"
+        }
+    )
+    graph.add_edge("vector_store_retrieval", "retrieval_evaluation")
+    graph.add_conditional_edges(
+        "retrieval_evaluation",
+        routing_after_evaluation,
+        {
+            "web_search": "web_search",
+            "generation": "generation"
+        }
+    )
+    graph.add_edge("web_search", "generation")
     graph.add_edge("generation", END)
     return graph.compile()
 

@@ -1,0 +1,121 @@
+from global_state import GlobalState
+from langchain_core.documents import Document
+import json
+import os
+from typing import Any, Dict, List, Optional, Tuple
+import psycopg2
+from langchain import LangChain
+from dotenv import load_dotenv
+
+load_dotenv()
+
+try:
+    import psycopg2  # type: ignore
+except Exception:  # pragma: no cover - fallback if psycopg2 isn't installed
+    psycopg2 = None
+
+try:
+    import psycopg  # type: ignore
+except Exception:  # pragma: no cover - fallback if psycopg isn't installed
+    psycopg = None
+
+
+def _get_env_value(name: str, required: bool = True) -> Optional[str]:
+    value = os.getenv(name)
+    if required and not value:
+        raise ValueError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _get_connection_params() -> Dict[str, Any]:
+    return {
+        "dbname": _get_env_value("RELATIONAL_DATABASE_NAME"),
+        "user": _get_env_value("RELATIONAL_DATABASE_USERNAME"),
+        "password": _get_env_value("RELATIONAL_DATABASE_PASSWORD"),
+        "host": _get_env_value("RELATIONAL_DATABASE_HOST"),
+        "port": _get_env_value("RELATIONAL_DATABASE_PORT"),
+        "sslmode": os.getenv("RELATIONAL_DATABASE_SSLMODE"),
+    }
+
+
+def _connect() -> Any:
+    params = _get_connection_params()
+    if psycopg2 is not None:
+        return psycopg2.connect(**params)
+    if psycopg is not None:
+        return psycopg.connect(**params)
+    raise ImportError(
+        "No PostgreSQL driver found. Install psycopg2-binary or psycopg."
+    )
+
+
+def _extract_sql_query(state: GlobalState) -> str:
+    sql_query = (
+        state.get("sql_query")
+        or state.get("relational_query")
+        or state.get("query")
+        or ""
+    )
+    if not sql_query:
+        raise ValueError(
+            "No SQL query provided in state. Set state['sql_query']."
+        )
+    return sql_query
+
+
+def _rows_to_documents(
+    rows: List[Tuple[Any, ...]], columns: List[str]
+) -> List[Document]:
+    documents: List[Document] = []
+    for row in rows:
+        record = dict(zip(columns, row)) if columns else {"result": row}
+        documents.append(
+            Document(
+                page_content=json.dumps(record, ensure_ascii=True, default=str),
+                metadata={"source": "relational_database"},
+            )
+        )
+    return documents
+
+
+
+def relational_database_retrieval_node(state: GlobalState):
+    """
+    Relational database retrieval node.
+    """
+    conn = psycopg2.connect(
+    dbname="mydatabase",
+    user="myuser",
+    password="mypassword",
+    host="localhost",
+    port="5432"
+)
+    cursor = conn.cursor()
+
+    # Initialize LangChain
+    langchain = LangChain()
+
+    def text_to_sql(text):
+    # Use LangChain to generate SQL from text
+        sql_query = langchain.text_to_sql(text)
+        
+        try:
+            # Execute the SQL query
+            cursor.execute(sql_query)
+            # Fetch and return the results
+            results = cursor.fetchall()
+            return results
+        except Exception as e:
+            return str(e)
+
+    documents = []
+    # Example prompt to convert text to SQL
+    multi_queries = state["multi_queries"]
+    for query in multi_queries:
+        sql_query = text_to_sql(query)
+        results = cursor.execute(sql_query)
+        documents.append(results)
+    
+    cursor.close()
+    conn.close()
+    return {"documents": documents}

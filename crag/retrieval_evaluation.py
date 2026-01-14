@@ -43,6 +43,8 @@ def retrieval_evaluation_node(state: GlobalState):
         
     format_instructions = parser.get_format_instructions()
 
+    filtered_documents = [] # documents that are relevant to the question
+
     for document in reranked_documents:
         prompt = PromptTemplate(
             template=system_prompt,
@@ -53,5 +55,24 @@ def retrieval_evaluation_node(state: GlobalState):
         chain = prompt | llm | parser
     
         result = chain.invoke({"document": document, "rewritten_query": rewritten_query})
-        retrieval_evaluation.append(result.binary_score)
-    return {"retrieval_evaluation": retrieval_evaluation}
+        grade = result.binary_score
+        if grade == "yes":
+            print(f"Document {document} is relevant to the question.")
+            filtered_documents.append(document)
+        else:
+            print(f"Document {document} is not relevant to the question.")
+        
+        if len(filtered_documents)/len(reranked_documents) <= 0.7:
+            return {"web_search_needed": True}
+        else:
+            return {"web_search_needed": False}
+
+def routing_after_evaluation(state: GlobalState):
+    '''
+    Route the flow after retrieval evaluation.(need to execute web search or not)
+    '''
+    web_search_needed = state["web_search_needed"]
+    if web_search_needed:
+        return "web_search"
+    else:
+        return "generation"

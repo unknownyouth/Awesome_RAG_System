@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Annotated
+from typing_extensions import TypedDict, List, Annotated
 from langchain_core.messages import BaseMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
@@ -31,7 +31,6 @@ class GlobalState(TypedDict):
     reranked_documents: List[Document]    # re-ranked documents
 
     # retrieval evaluation result
-    retrieval_evaluation: List[str]    # retrieval evaluation result
     web_search_needed: bool           # whether to execute web search (for routing)
     final_documents: List[Document]    # final documents for answer generation
 
