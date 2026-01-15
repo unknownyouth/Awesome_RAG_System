@@ -5,6 +5,10 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 import psycopg2
 from dotenv import load_dotenv
+from langchain_community.utilities import SQLDatabase
+from langchain_openai import ChatOpenAI
+from langchain_community.agents import create_sql_agent
+from langchain_community.tools import SQLDatabaseToolkit
 
 load_dotenv()
 
@@ -19,6 +23,7 @@ except Exception:  # pragma: no cover - fallback if psycopg isn't installed
     psycopg = None
 
 
+## TODO：https://docs.langchain.com/oss/python/langchain/sql-agent
 def _get_env_value(name: str, required: bool = True) -> Optional[str]:
     value = os.getenv(name)
     if required and not value:
@@ -76,8 +81,15 @@ def _rows_to_documents(
         )
     return documents
 
+db = SQLDatabase.from_uri("postgresql+psycopg2://myuser:mypassword@localhost:5432/testyu")
 
-
+llm = ChatOpenAI(temperature=0, 
+                model_name="deepseek-chat",
+                api_key=os.getenv('DEEPSEEK_API_KEY'),
+                base_url="https://api.deepseek.com",
+                max_tokens=4000)
+toolkit = SQLDatabaseToolkit(db=db, llm=llm)
+agent = create_sql_agent(llm=llm, toolkit=toolkit, verbose=True)
 def relational_database_retrieval_node(state: GlobalState):
     """
     Relational database retrieval node.
