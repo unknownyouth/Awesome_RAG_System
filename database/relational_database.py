@@ -4,7 +4,6 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 import psycopg2
-from langchain import LangChain
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -84,7 +83,7 @@ def relational_database_retrieval_node(state: GlobalState):
     Relational database retrieval node.
     """
     conn = psycopg2.connect(
-    dbname="mydatabase",
+    dbname="testyu",
     user="myuser",
     password="mypassword",
     host="localhost",
@@ -92,8 +91,6 @@ def relational_database_retrieval_node(state: GlobalState):
 )
     cursor = conn.cursor()
 
-    # Initialize LangChain
-    langchain = LangChain()
 
     def text_to_sql(text):
     # Use LangChain to generate SQL from text
@@ -103,7 +100,9 @@ def relational_database_retrieval_node(state: GlobalState):
             # Execute the SQL query
             cursor.execute(sql_query)
             # Fetch and return the results
-            results = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            results = [dict(zip(columns, row)) for row in rows]
             return results
         except Exception as e:
             return str(e)
@@ -112,8 +111,8 @@ def relational_database_retrieval_node(state: GlobalState):
     # Example prompt to convert text to SQL
     multi_queries = state["multi_queries"]
     for query in multi_queries:
-        sql_query = text_to_sql(query)
-        results = cursor.execute(sql_query)
+        results = text_to_sql(query)
+
         documents.append(results)
     
     cursor.close()

@@ -89,11 +89,13 @@ def build_graph():
         route_to_database,
         {
             "vector_store_retrieval": "vector_store_retrieval",
-            "graph_database": "graph_database",
-            "relational_database": "relational_database"
+            "graph_database": "graph_database_retrieval",
+            "relational_database": "relational_database_retrieval"
         }
     )
     graph.add_edge("vector_store_retrieval", "retrieval_evaluation")
+    graph.add_edge("graph_database_retrieval", "retrieval_evaluation")
+    graph.add_edge("relational_database_retrieval", "retrieval_evaluation")
     graph.add_conditional_edges(
         "retrieval_evaluation",
         routing_after_evaluation,

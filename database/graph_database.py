@@ -4,7 +4,7 @@ from langchain_core.documents import Document
 
 
 
-def graph_database_retrieval_node(state: GlobalState, graph_database: GraphDatabase):
+def graph_database_retrieval_node(state: GlobalState):
     """
     LangGraph 节点：只使用 Chroma 做 dense (语义) 检索。
     - 从 state["multi_queries"] 里取 query
