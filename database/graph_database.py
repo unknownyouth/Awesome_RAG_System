@@ -2,7 +2,24 @@ from global_state import GlobalState
 from typing import List
 from langchain_core.documents import Document
 
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain_neo4j import Neo4jGraph, GraphCypherQAChain
 
+from dotenv import load_dotenv
+import os
+
+# Load .env file
+load_dotenv()
+
+
+# Create a connection to Neo4j
+graph = Neo4jGraph(
+    url=os.environ["NEO4J_URI"],
+    username=os.environ["NEO4J_USERNAME"],
+    password=os.environ["NEO4J_PASSWORD"],
+    database=os.environ["NEO4J_DATABASE"],
+)
 
 def graph_database_retrieval_node(state: GlobalState):
     """
