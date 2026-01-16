@@ -102,3 +102,145 @@ LangChain 提供了一个 Auto-Fixing 机制。如果第一次解析失败了，
 4.方案四：受限解码 (Constrained Decoding) —— 仅限本地部署
 如果你使用的是 vLLM 本地部署（你之前提到了 Qwen 2.5），这是最强、最完美的方案。
 你可以直接在推理引擎层面“禁止”模型生成任何不符合 JSON 语法的 Token。这不需要模型“聪明”，而是从数学概率上锁死了它只能输出 JSON。
+
+Query Router training Roadmap：
+Dataset Building：
+Pubic Dataset：
+Relational Database： Spider WikiSQL
+Graph Database： MetaQA WebQuestionsSP ComplexWebQuestions
+Vector Store： Natural Questions(google ai) HotpotQA(Explaination Style) TriviaQA
+
+Data Distribution:
+Public:65%
+Synthetic:35% (40% easy, 60% hard)
+
+Data Generation Prompts:
+
+You are generating training data for a query routing classifier in a RAG system.
+
+Generate 20 user queries that should be answered using a VECTOR STORE.
+
+These queries should:
+- Ask for explanations, summaries, definitions, or conceptual understanding
+- Be answerable using unstructured or semi-structured text documents
+- NOT require counting, aggregation, filtering over tables
+- NOT require explicit reasoning over entity relationships or paths
+
+Output a JSON list.
+Each item must follow this schema:
+
+{
+  "query": "...",
+  "label": "vector_store",
+  "difficulty": "easy",
+  "rationale": "..."
+}
+
+You are generating HARD training examples for a query routing classifier.
+
+Generate 20 user queries that should STILL be answered using a VECTOR STORE,
+but which could easily be confused with graph or relational queries.
+
+These queries should:
+- Mention entities, years, or comparisons
+- Possibly include words like "compare", "difference", or "trend"
+- BUT ultimately require narrative explanation or textual synthesis,
+  not structured querying or relationship traversal
+
+Output a JSON list using this schema:
+
+{
+  "query": "...",
+  "label": "vector_store",
+  "difficulty": "hard",
+  "rationale": "..."
+}
+
+You are generating training data for a query routing classifier.
+
+Generate 20 user queries that should be answered using a RELATIONAL DATABASE.
+
+These queries should:
+- Clearly involve structured records stored in tables
+- Require filtering, aggregation, sorting, or grouping
+- Sound like they could be translated into SQL
+
+Include queries involving:
+- counts, averages, sums
+- conditions like WHERE, BETWEEN, >, <, =
+- GROUP BY or ORDER BY semantics
+
+Output a JSON list with this schema:
+
+{
+  "query": "...",
+  "label": "relational_database",
+  "difficulty": "easy",
+  "rationale": "..."
+}
+
+Generate 20 HARD user queries that should be answered using a RELATIONAL DATABASE.
+
+These queries should:
+- Be phrased in natural language, not explicit SQL
+- Hide their structured nature behind conversational wording
+- Still fundamentally require querying structured tables
+
+They may:
+- Ask for comparisons across years
+- Ask for rankings or top-k items
+- Combine multiple conditions
+
+Output a JSON list with this schema:
+
+{
+  "query": "...",
+  "label": "relational_database",
+  "difficulty": "hard",
+  "rationale": "..."
+}
+
+Generate 20 user queries that should be answered using a GRAPH DATABASE.
+
+These queries should:
+- Ask about relationships between entities
+- Require traversing one or more edges in a knowledge graph
+- Involve phrases like "connected to", "worked with", "related to", "shared with"
+
+Do NOT include:
+- Aggregation over numeric fields
+- Pure explanation or summarization
+
+Output a JSON list using this schema:
+
+{
+  "query": "...",
+  "label": "graph_database",
+  "difficulty": "easy",
+  "rationale": "..."
+}
+
+Generate 20 HARD user queries that should be answered using a GRAPH DATABASE.
+
+These queries should:
+- Be phrased ambiguously or conversationally
+- Involve multiple entities and implicit relationships
+- Require reasoning over connections or shared attributes
+- Be easily confused with vector-store explanation queries
+
+Avoid:
+- Queries that are purely descriptive
+- Queries that only require counting or aggregation
+
+Output a JSON list with this schema:
+
+{
+  "query": "...",
+  "label": "graph_database",
+  "difficulty": "hard",
+  "rationale": "..."
+}
+TODO:
+Documents refinement
+Query Router
+Building knowledge sources
