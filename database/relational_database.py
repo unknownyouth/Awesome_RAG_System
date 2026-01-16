@@ -1,132 +1,92 @@
 from global_state import GlobalState
 from langchain_core.documents import Document
-import json
 import os
-from typing import Any, Dict, List, Optional, Tuple
-import psycopg2
+from typing import List
 from dotenv import load_dotenv
 from langchain_community.utilities import SQLDatabase
 from langchain_openai import ChatOpenAI
-from langchain_community.agents import create_sql_agent
-from langchain_community.tools import SQLDatabaseToolkit
-
+from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
 load_dotenv()
 
-try:
-    import psycopg2  # type: ignore
-except Exception:  # pragma: no cover - fallback if psycopg2 isn't installed
-    psycopg2 = None
-
-try:
-    import psycopg  # type: ignore
-except Exception:  # pragma: no cover - fallback if psycopg isn't installed
-    psycopg = None
-
-
 ## TODO：https://docs.langchain.com/oss/python/langchain/sql-agent
-def _get_env_value(name: str, required: bool = True) -> Optional[str]:
-    value = os.getenv(name)
-    if required and not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
 
 
-def _get_connection_params() -> Dict[str, Any]:
-    return {
-        "dbname": _get_env_value("RELATIONAL_DATABASE_NAME"),
-        "user": _get_env_value("RELATIONAL_DATABASE_USERNAME"),
-        "password": _get_env_value("RELATIONAL_DATABASE_PASSWORD"),
-        "host": _get_env_value("RELATIONAL_DATABASE_HOST"),
-        "port": _get_env_value("RELATIONAL_DATABASE_PORT"),
-        "sslmode": os.getenv("RELATIONAL_DATABASE_SSLMODE"),
-    }
+def _get_db_uri() -> str:
+    uri = os.getenv("RELATIONAL_DATABASE_URI")
+    if uri:
+        return uri
+    user = os.getenv("RELATIONAL_DATABASE_USERNAME", "yuzhejun")
+    password = os.getenv("RELATIONAL_DATABASE_PASSWORD", "mypassword")
+    host = os.getenv("RELATIONAL_DATABASE_HOST", "localhost")
+    port = os.getenv("RELATIONAL_DATABASE_PORT", "5432")
+    name = os.getenv("RELATIONAL_DATABASE_NAME", "testyu")
+    return f"postgresql://{user}:{password}@{host}:{port}/{name}"
 
 
-def _connect() -> Any:
-    params = _get_connection_params()
-    if psycopg2 is not None:
-        return psycopg2.connect(**params)
-    if psycopg is not None:
-        return psycopg.connect(**params)
-    raise ImportError(
-        "No PostgreSQL driver found. Install psycopg2-binary or psycopg."
-    )
 
-
-def _extract_sql_query(state: GlobalState) -> str:
-    sql_query = (
-        state.get("sql_query")
-        or state.get("relational_query")
-        or state.get("query")
-        or ""
-    )
-    if not sql_query:
-        raise ValueError(
-            "No SQL query provided in state. Set state['sql_query']."
-        )
-    return sql_query
-
-
-def _rows_to_documents(
-    rows: List[Tuple[Any, ...]], columns: List[str]
-) -> List[Document]:
-    documents: List[Document] = []
-    for row in rows:
-        record = dict(zip(columns, row)) if columns else {"result": row}
-        documents.append(
-            Document(
-                page_content=json.dumps(record, ensure_ascii=True, default=str),
-                metadata={"source": "relational_database"},
-            )
-        )
-    return documents
-
-db = SQLDatabase.from_uri("postgresql+psycopg2://myuser:mypassword@localhost:5432/testyu")
-
-llm = ChatOpenAI(temperature=0, 
-                model_name="deepseek-chat",
-                api_key=os.getenv('DEEPSEEK_API_KEY'),
-                base_url="https://api.deepseek.com",
-                max_tokens=4000)
-toolkit = SQLDatabaseToolkit(db=db, llm=llm)
-agent = create_sql_agent(llm=llm, toolkit=toolkit, verbose=True)
 def relational_database_retrieval_node(state: GlobalState):
     """
     Relational database retrieval node.
     """
-    conn = psycopg2.connect(
-    dbname="testyu",
-    user="myuser",
-    password="mypassword",
-    host="localhost",
-    port="5432"
-)
-    cursor = conn.cursor()
 
+    db = SQLDatabase.from_uri(_get_db_uri())
 
-    def text_to_sql(text):
-    # Use LangChain to generate SQL from text
-        sql_query = langchain.text_to_sql(text)
-        
-        try:
-            # Execute the SQL query
-            cursor.execute(sql_query)
-            # Fetch and return the results
-            columns = [desc[0] for desc in cursor.description]
-            rows = cursor.fetchall()
-            results = [dict(zip(columns, row)) for row in rows]
-            return results
-        except Exception as e:
-            return str(e)
+    model = ChatOpenAI(temperature=0, 
+                    model_name="deepseek-chat",
+                    api_key=os.getenv('DEEPSEEK_API_KEY'),
+                    base_url="https://api.deepseek.com",
+                    max_tokens=4000)
 
-    documents = []
-    # Example prompt to convert text to SQL
-    multi_queries = state["multi_queries"]
-    for query in multi_queries:
-        results = text_to_sql(query)
-
-        documents.append(results)
+    toolkit = SQLDatabaseToolkit(db=db, llm=model)
+    tools = toolkit.get_tools()
     
-    cursor.close()
-    conn.close()
+    system_prompt = """
+You are an agent designed to interact with a SQL database.
+Given an input question, create a syntactically correct {dialect} query to run,
+then look at the results of the query and return the answer. Unless the user
+specifies a specific number of examples they wish to obtain, always limit your
+query to at most {top_k} results.
+
+You can order the results by a relevant column to return the most interesting
+examples in the database. Never query for all the columns from a specific table,
+only ask for the relevant columns given the question.
+
+You MUST double check your query before executing it. If you get an error while
+executing a query, rewrite the query and try again.
+
+DO NOT make any DML statements (INSERT, UPDATE, DELETE, DROP etc.) to the
+database.
+
+To start you should ALWAYS look at the tables in the database to see what you
+can query. Do NOT skip this step.
+
+Then you should query the schema of the most relevant tables.
+""".format(
+    dialect=db.dialect,
+    top_k=5,
+)
+    agent = create_sql_agent(
+        llm=model,
+        toolkit=toolkit,
+        verbose=True,
+        prefix=system_prompt,
+    )
+
+    documents: List[Document] = []
+    multi_queries = state.get("multi_queries") or [state.get("original_question", "")]
+    for query in multi_queries:
+        if not query:
+            continue
+        try:
+            result = agent.invoke({"input": query})
+            output_text = result.get("output") if isinstance(result, dict) else str(result)
+        except Exception as exc:
+            output_text = f"SQL agent error: {exc}"
+        documents.append(
+            Document(
+                page_content=output_text,
+                metadata={"source": "relational_database", "query": query},
+            )
+        )
+
     return {"documents": documents}
